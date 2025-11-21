@@ -13,8 +13,8 @@ using MovieTexture2AssetEditorPlugin;
 
 [assembly: PluginDisplayName("MovieTexture2Asset Editor Utils")]
 [assembly: PluginAuthor("AdamRaichu")]
-[assembly: PluginVersion("1.0.1.1")]
+[assembly: PluginVersion("1.0.2.0")]
 
 // Register your menu extension or editor
-[assembly: RegisterAssetDefinition("MovieTexture2Asset", typeof(MovieTexture2AssetDefition))] // Register the asset definition
+[assembly: RegisterAssetDefinition("MovieTexture2Asset", typeof(MovieTexture2AssetDefition))]
 [assembly: RegisterAssetDefinition("MovieTextureAsset", typeof(MovieTexture2AssetDefition))]

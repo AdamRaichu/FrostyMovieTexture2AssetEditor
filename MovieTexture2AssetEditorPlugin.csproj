@@ -45,22 +45,27 @@
 
   <ItemGroup>
     <Reference Include="FrostyControls">
-      <HintPath>E:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostyControls.dll</HintPath>
+      <HintPath>D:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostyControls.dll</HintPath>
     </Reference>
     <Reference Include="FrostyCore">
-      <HintPath>E:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostyCore.dll</HintPath>
+      <HintPath>D:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostyCore.dll</HintPath>
     </Reference>
     <Reference Include="FrostyHash">
-      <HintPath>E:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostyHash.dll</HintPath>
+      <HintPath>D:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostyHash.dll</HintPath>
     </Reference>
     <Reference Include="FrostyModSupport">
-      <HintPath>E:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostyModSupport.dll</HintPath>
+      <HintPath>D:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostyModSupport.dll</HintPath>
     </Reference>
     <Reference Include="FrostySdk">
-      <HintPath>E:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostySdk.dll</HintPath>
+      <HintPath>D:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostySdk.dll</HintPath>
     </Reference>
     <Reference Include="FrostyEditor">
-      <HintPath>E:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostyEditor.exe</HintPath>
+      <HintPath>D:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostyEditor.exe</HintPath>
+    </Reference>
+	  <!-- For referencing the Duplication Plugin 
+	  -->
+    <Reference Include="DuplicationPlugin">
+      <HintPath>D:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\Plugins\DuplicationPlugin.dll</HintPath>
     </Reference>
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="PresentationCore" />
@@ -70,9 +75,12 @@
     <Reference Include="WindowsBase" />
   </ItemGroup>
 
+  <!--
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec
-      Command="xcopy /Y $(TargetPath) E:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\Plugins\" />
-  </Target>
+	  <Exec
+      Command="xcopy /Y $(TargetPath)
+  D:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\Plugins\" />
+    </Target>
+	-->
 
 </Project>

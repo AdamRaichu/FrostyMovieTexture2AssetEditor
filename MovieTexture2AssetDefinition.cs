@@ -5,14 +5,42 @@ using Frosty.Core.Windows;
 using FrostySdk.Interfaces;
 using FrostySdk.IO;
 using FrostySdk.Managers;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Media;
+using static DuplicationPlugin.DuplicationTool;
 
 namespace MovieTexture2AssetEditorPlugin
 {
+    public class MovieTexture2DuplicationExtension : DuplicateAssetExtension
+    {
+        public override string AssetType => "MovieTexture2Asset";
+
+        public override EbxAssetEntry DuplicateAsset(EbxAssetEntry entry, string newName, bool createNew, Type newType)
+        {
+            EbxAssetEntry refEntry = base.DuplicateAsset(entry, newName, createNew, newType);
+
+            EbxAsset refAsset = App.AssetManager.GetEbx(refEntry);
+            dynamic refRoot = refAsset.RootObject;
+
+            ChunkAssetEntry webmChunk = App.AssetManager.GetChunkEntry(refRoot.ChunkGuid);
+            ChunkAssetEntry newWebmChunk = DuplicateChunk(webmChunk);
+            refRoot.ChunkGuid = newWebmChunk.Id;
+
+            App.AssetManager.ModifyEbx(refEntry.Name, refAsset);
+
+            return refEntry;
+        }
+    }
+
+    public class MovieTextureDuplicationExtension : MovieTexture2DuplicationExtension
+    {
+        public override string AssetType => "MovieTextureAsset";
+    }
+
     public class MovieTexture2AssetDefition : AssetDefinition
     {
 
