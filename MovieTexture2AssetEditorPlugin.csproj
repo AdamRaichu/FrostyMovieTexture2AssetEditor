@@ -44,9 +44,22 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="_EffectBlueprintEditorPlugin\**" />
+    <Compile Remove="_FrostyToolsuite\**" />
+    <EmbeddedResource Remove="_EffectBlueprintEditorPlugin\**" />
+    <EmbeddedResource Remove="_FrostyToolsuite\**" />
+    <None Remove="_EffectBlueprintEditorPlugin\**" />
+    <None Remove="_FrostyToolsuite\**" />
+    <Page Remove="_EffectBlueprintEditorPlugin\**" />
+    <Page Remove="_FrostyToolsuite\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="FrostyControls">
       <HintPath>D:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostyControls.dll</HintPath>
     </Reference>
+    <PackageReference Include="LibVLCSharp.WPF" Version="3.9.0" />
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.21" />
     <Reference Include="FrostyCore">
       <HintPath>D:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostyCore.dll</HintPath>
     </Reference>

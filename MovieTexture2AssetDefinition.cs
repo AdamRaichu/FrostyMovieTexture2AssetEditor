@@ -11,7 +11,15 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Threading;
+using System.Reflection;
+using System.Windows.Controls;
+using System.Threading;
+using LibVLCSharp.Shared;
+using LibVLCSharp.WPF;
 using static DuplicationPlugin.DuplicationTool;
+
+using MediaPlayer = LibVLCSharp.Shared.MediaPlayer;
 
 namespace MovieTexture2AssetEditorPlugin
 {
@@ -57,10 +65,252 @@ namespace MovieTexture2AssetEditorPlugin
         }
     }
 
+    [TemplatePart(Name = "PART_VideoView", Type = typeof(VideoView))]
+    [TemplatePart(Name = "PART_PlayButton", Type = typeof(Button))]
+    [TemplatePart(Name = "PART_PauseButton", Type = typeof(Button))]
+    [TemplatePart(Name = "PART_SeekSlider", Type = typeof(Slider))]
+    [TemplatePart(Name = "PART_VolumeSlider", Type = typeof(Slider))]
+    [TemplatePart(Name = "PART_AssetPropertyGrid", Type = typeof(FrostyPropertyGrid))]
     public class MovieTexture2Editor : FrostyAssetEditor
     {
+        private VideoView videoView;
+        private LibVLC libVLC;
+        private MediaPlayer mediaPlayer;
+        private Button playButton;
+        private Button pauseButton;
+        private Slider seekSlider;
+        private Slider volumeSlider;
+        private FrostyPropertyGrid propertyGrid;
+        
+        private string tempFilePath;
+        private bool isSeeking;
+        private long lastTime = -1;
+
+        static MovieTexture2Editor()
+        {
+            DefaultStyleKeyProperty.OverrideMetadata(typeof(MovieTexture2Editor), new FrameworkPropertyMetadata(typeof(MovieTexture2Editor)));
+        }
+
         public MovieTexture2Editor(ILogger logger) : base(logger)
         {
+        }
+
+        public override void OnApplyTemplate()
+        {
+            base.OnApplyTemplate();
+
+            videoView = GetTemplateChild("PART_VideoView") as VideoView;
+            playButton = GetTemplateChild("PART_PlayButton") as Button;
+            pauseButton = GetTemplateChild("PART_PauseButton") as Button;
+            seekSlider = GetTemplateChild("PART_SeekSlider") as Slider;
+            volumeSlider = GetTemplateChild("PART_VolumeSlider") as Slider;
+            propertyGrid = GetTemplateChild("PART_AssetPropertyGrid") as FrostyPropertyGrid;
+
+            // Initialize LibVLC and MediaPlayer via Shared Method
+            EnsureVlcInitialized();
+
+            // Event Listeners
+            if (playButton != null) playButton.Click += PlayButton_Click;
+            if (pauseButton != null) pauseButton.Click += PauseButton_Click;
+            
+            if (seekSlider != null)
+            {
+                seekSlider.PreviewMouseDown += SeekSlider_PreviewMouseDown;
+                seekSlider.PreviewMouseUp += SeekSlider_PreviewMouseUp;
+                seekSlider.ValueChanged += SeekSlider_ValueChanged;
+            }
+            
+            if (volumeSlider != null)
+                volumeSlider.ValueChanged += VolumeSlider_ValueChanged;
+
+            Loaded += MovieTexture2Editor_Loaded;
+            Unloaded += MovieTexture2Editor_Unloaded;
+
+            // Bind Property Grid
+            if (propertyGrid != null)
+            {
+                propertyGrid.Object = asset.RootObject;
+                propertyGrid.OnModified += PropertyGrid_OnModified;
+            }
+        }
+
+        private void EnsureVlcInitialized()
+        {
+            if (libVLC == null)
+            {
+                // Ensure Core is initialized
+                try 
+                {
+                    string assemblyLocation = Assembly.GetExecutingAssembly().Location;
+                    string assemblyDir = Path.GetDirectoryName(assemblyLocation);
+                    string libvlcPath = Path.Combine(assemblyDir, "libvlc", IntPtr.Size == 8 ? "win-x64" : "win-x86");
+                    Core.Initialize(libvlcPath); 
+                } 
+                catch { }
+
+                libVLC = new LibVLC();
+                mediaPlayer = new MediaPlayer(libVLC);
+                
+                // Bind events
+                mediaPlayer.LengthChanged += MediaPlayer_LengthChanged;
+                mediaPlayer.TimeChanged += MediaPlayer_TimeChanged;
+                mediaPlayer.EndReached += MediaPlayer_EndReached;
+                
+                if (videoView != null)
+                    videoView.MediaPlayer = mediaPlayer;
+            }
+        }
+
+        private void PropertyGrid_OnModified(object sender, ItemModifiedEventArgs e)
+        {
+            InvokeOnAssetModified();
+        }
+
+        private void MovieTexture2Editor_Loaded(object sender, RoutedEventArgs e)
+        {
+            EnsureVlcInitialized();
+
+            if (tempFilePath == null)
+            {
+                ExtractVideo();
+            }
+            
+            if (tempFilePath != null && File.Exists(tempFilePath))
+            {
+                using (Media media = new Media(libVLC, tempFilePath))
+                {
+                    mediaPlayer.Media = media;
+                }
+                
+                // Restore timestamp if we have one
+                if (lastTime > 0)
+                {
+                    mediaPlayer.Time = lastTime;
+                }
+            }
+        }
+
+        private void MovieTexture2Editor_Unloaded(object sender, RoutedEventArgs e)
+        {
+            if (mediaPlayer != null)
+            {
+                lastTime = mediaPlayer.Time;
+                mediaPlayer.Stop();
+                mediaPlayer.Dispose();
+                mediaPlayer = null;
+            }
+
+            if (libVLC != null)
+            {
+                libVLC.Dispose();
+                libVLC = null;
+            }
+
+            if (videoView != null)
+            {
+                videoView.MediaPlayer = null;
+            }
+            
+            if (tempFilePath != null && File.Exists(tempFilePath))
+            {
+                try { File.Delete(tempFilePath); } catch { }
+                tempFilePath = null;
+            }
+        }
+
+        private void ExtractVideo()
+        {
+            try
+            {
+                dynamic root = asset.RootObject;
+                Guid chunkGuid = (Guid)root.ChunkGuid;
+                
+                if (chunkGuid == Guid.Empty)
+                    return;
+
+                ChunkAssetEntry chunkEntry = App.AssetManager.GetChunkEntry(chunkGuid);
+                if (chunkEntry == null)
+                    return;
+
+                Stream chunkStream = App.AssetManager.GetChunk(chunkEntry);
+                if (chunkStream == null)
+                    return;
+
+                tempFilePath = Path.GetTempFileName().Replace(".tmp", ".webm");
+                
+                using (FileStream fs = new FileStream(tempFilePath, FileMode.Create))
+                {
+                    chunkStream.CopyTo(fs);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError("Failed to extract video: " + ex.Message);
+            }
+        }
+
+        private void PlayButton_Click(object sender, RoutedEventArgs e)
+        {
+            mediaPlayer.Play();
+        }
+
+        private void PauseButton_Click(object sender, RoutedEventArgs e)
+        {
+            mediaPlayer.Pause();
+        }
+
+        private void SeekSlider_PreviewMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            isSeeking = true;
+        }
+
+        private void SeekSlider_PreviewMouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            isSeeking = false;
+            long time = (long)seekSlider.Value;
+            mediaPlayer.Time = time;
+        }
+
+        private void SeekSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (isSeeking)
+            {
+                // Optional: Live seeking
+                // mediaPlayer.Time = (long)e.NewValue; 
+            }
+        }
+
+        private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (mediaPlayer != null)
+            {
+                mediaPlayer.Volume = (int)e.NewValue;
+            }
+        }
+
+        private void MediaPlayer_LengthChanged(object sender, MediaPlayerLengthChangedEventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                seekSlider.Maximum = e.Length;
+            });
+        }
+
+        private void MediaPlayer_TimeChanged(object sender, MediaPlayerTimeChangedEventArgs e)
+        {
+            if (!isSeeking)
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    seekSlider.Value = e.Time;
+                });
+            }
+        }
+
+        private void MediaPlayer_EndReached(object sender, EventArgs e)
+        {
+             // Loop? or Stop.
+             ThreadPool.QueueUserWorkItem(_ => mediaPlayer?.Stop()); 
         }
 
         public override List<ToolbarItem> RegisterToolbarItems() {
@@ -145,12 +395,28 @@ namespace MovieTexture2AssetEditorPlugin
                 });
                 root.ChunkSize = chunkSize;
                 App.AssetManager.ModifyEbx(AssetEntry.Name, asset);
+                
+                // Reload video
+                if (tempFilePath != null)
+                {
+                    mediaPlayer.Stop();
+                    // Extract new video
+                    ExtractVideo();
+                    if (tempFilePath != null && File.Exists(tempFilePath))
+                    {
+                         using (Media media = new Media(libVLC, tempFilePath))
+                             mediaPlayer.Media = media;
+                         mediaPlayer.Play();
+                    }
+                }
+
                 // Refresh the property grid UI
-                FrostyPropertyGrid pg = (GetTemplateChild("PART_AssetPropertyGrid") as FrostyPropertyGrid);
-                pg.Object = asset.RootObject;
+                if (propertyGrid != null)
+                     propertyGrid.Object = asset.RootObject;
+                
                 InvokeOnAssetModified();
 
-                logger.Log($"Succesfully imported {AssetEntry.Filename}. (ChunkSize was updated automatically; refresh to see changes.)");
+                logger.Log($"Succesfully imported {AssetEntry.Filename}.");
             }
         }
     }
