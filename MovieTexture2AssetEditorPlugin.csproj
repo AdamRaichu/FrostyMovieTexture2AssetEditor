@@ -10,14 +10,28 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <UseWPF>true</UseWPF>
     <OutputType>Library</OutputType>
-    <Authors>MovieTexture2AssetEditorPlugin</Authors>
+    <Authors>AdamRaichu</Authors>
     <Company />
     <AssemblyName>MovieTexture2AssetEditorPlugin</AssemblyName>
     <RootNamespace>MovieTexture2AssetEditorPlugin</RootNamespace>
     <PathMap>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)'))=$(MSBuildProjectName)\</PathMap>
     <DebugType>embedded</DebugType>
     <LangVersion>12</LangVersion>
-  </PropertyGroup>
+	<WeaverConfiguration>
+		<Weavers>
+			<Costura>
+				<!-- Only embed these runtime assemblies -->
+				<IncludeAssemblies>
+					LibVLCSharp
+					LibVLCSharp.WPF
+				</IncludeAssemblies>
+			</Costura>
+		</Weavers>
+	</WeaverConfiguration>
+	<PublishSingleFile>true</PublishSingleFile>
+	<SelfContained>true</SelfContained>
+	<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+</PropertyGroup>
 
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Developer - Debug|x64' ">
     <DebugSymbols>true</DebugSymbols>
@@ -55,11 +69,21 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Reference Include="FrostyControls">
-      <HintPath>D:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostyControls.dll</HintPath>
-    </Reference>
+    <None Remove="LibVlc\**\*.dll" />
+    <EmbeddedResource Include="LibVlc\**\*.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+	<PackageReference Include="Costura.Fody" Version="6.0.0">
+		<PrivateAssets>all</PrivateAssets>
+	</PackageReference>
+	  <!--
+	  -->
     <PackageReference Include="LibVLCSharp.WPF" Version="3.9.0" />
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.21" />
+	<Reference Include="FrostyControls">
+		<HintPath>D:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostyControls.dll</HintPath>
+	</Reference>
     <Reference Include="FrostyCore">
       <HintPath>D:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostyCore.dll</HintPath>
     </Reference>
@@ -75,17 +99,23 @@
     <Reference Include="FrostyEditor">
       <HintPath>D:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\FrostyEditor.exe</HintPath>
     </Reference>
-	  <!-- For referencing the Duplication Plugin 
-	  -->
     <Reference Include="DuplicationPlugin">
       <HintPath>D:\Frosty\FrostyToolsuite\FrostyEditor\bin\Developer\Debug\Plugins\DuplicationPlugin.dll</HintPath>
     </Reference>
+	<Reference Include="DuplicationPluginInjectorPlugin">
+		<HintPath>.\DuplicationInjector\DuplicationPluginInjectorPlugin.dll</HintPath>
+		<ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+	</Reference>
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xaml" />
     <Reference Include="WindowsBase" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="DuplicationInjector\" />
   </ItemGroup>
 
   <!--

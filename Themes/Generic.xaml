@@ -6,48 +6,54 @@
     xmlns:ctrl="clr-namespace:Frosty.Controls;assembly=FrostyControls"
     xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF">
 
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/FrostyControls;component/Themes/Generic.xaml"/>
+    </ResourceDictionary.MergedDictionaries>
+
     <Style TargetType="{x:Type local:MovieTexture2Editor}">
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type local:MovieTexture2Editor}">
                     <Grid>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="*" MinHeight="100"/>
-                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
                             <RowDefinition Height="5"/>
-                            <RowDefinition Height="*" MinHeight="100"/>
+                            <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
+                        <Grid Grid.Row="0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
 
-                        <!-- Row 0: Video Player -->
-                        <Border Grid.Row="0" Background="Black">
-                            <vlc:VideoView x:Name="PART_VideoView"/>
-                        </Border>
+                            <!-- Video Player -->
+                            <Border Grid.Row="0" Background="{DynamicResource ControlBackground}">
+                                <vlc:VideoView x:Name="PART_VideoView" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
 
-                        <!-- Row 0: Controls (moved to bottom of video row or separate row? User approved "below video". Let's put in separate row for stability) -->
-                         <!-- Actually, to emulate "standard" players, controls often sit below. Let's start with a dedicated row for controls to avoid overlay issues. -->
-                        <Grid Grid.Row="1" Background="#FF2D2D30">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="100"/>
-                            </Grid.ColumnDefinitions>
+                            <!-- Controls -->
+                            <Grid Grid.Row="1" Background="#FF2D2D30">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="100"/>
+                                </Grid.ColumnDefinitions>
 
-                            <Button x:Name="PART_PlayButton" Grid.Column="0" Content="Play" Width="50" Margin="5" Padding="2"/>
-                            <Button x:Name="PART_PauseButton" Grid.Column="1" Content="Pause" Width="50" Margin="5" Padding="2"/>
-                            
-                            <Slider x:Name="PART_SeekSlider" Grid.Column="2" VerticalAlignment="Center" Margin="10,0" IsMoveToPointEnabled="True"/>
-                            
-                            <TextBlock Grid.Column="3" Text="Vol" Foreground="White" VerticalAlignment="Center" Margin="5,0"/>
-                            <Slider x:Name="PART_VolumeSlider" Grid.Column="4" VerticalAlignment="Center" Margin="5" Minimum="0" Maximum="100" Value="100" />
+                                <Button x:Name="PART_PlaybackButton" Grid.Column="0" Content="Play" Width="50" Margin="5" Padding="2"/>
+                                
+                                <Slider x:Name="PART_SeekSlider" Grid.Column="1" VerticalAlignment="Center" Margin="10,0" IsMoveToPointEnabled="True"/>
+                                
+                                <TextBlock Grid.Column="2" Text="Vol" Foreground="White" VerticalAlignment="Center" Margin="5,0"/>
+                                <Slider x:Name="PART_VolumeSlider" Grid.Column="3" VerticalAlignment="Center" Margin="5" Minimum="0" Maximum="100" Value="100" />
+                            </Grid>
                         </Grid>
 
-                        <!-- Row 2: Splitter -->
-                        <GridSplitter Grid.Row="2" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="#FF3E3E42" ShowsPreview="True" ResizeBehavior="PreviousAndNext"/>
+                        <!-- Row 1: Splitter -->
+                        <GridSplitter Grid.Row="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="#FF3E3E42" ShowsPreview="True" ResizeBehavior="PreviousAndNext"/>
 
-                        <!-- Row 3: Property Grid -->
-                        <Border Grid.Row="3" Background="{DynamicResource ControlBackground}">
+                        <!-- Row 2: Property Grid -->
+                        <Border Grid.Row="2" Background="{DynamicResource ControlBackground}">
                             <ctrl:FrostyDockablePanel x:Name="PART_AssetPropertyGridPanel" Title="Properties" Icon="/FrostyEditor;component/Images/Properties.png">
                                 <core:FrostyPropertyGrid x:Name="PART_AssetPropertyGrid" Asset="{Binding Asset, RelativeSource={RelativeSource TemplatedParent}}" Modified="{Binding AssetModified, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"/>
                             </ctrl:FrostyDockablePanel>

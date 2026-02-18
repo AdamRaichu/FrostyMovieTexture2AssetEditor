@@ -1,28 +1,31 @@
+using DuplicationPluginInjectorPlugin;
 using Frosty.Controls;
 using Frosty.Core;
+//using FrostyEditor;
 using Frosty.Core.Controls;
 using Frosty.Core.Windows;
 using FrostySdk.Interfaces;
 using FrostySdk.IO;
 using FrostySdk.Managers;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Security.Cryptography;
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Threading;
-using System.Reflection;
-using System.Windows.Controls;
-using System.Threading;
 using LibVLCSharp.Shared;
 using LibVLCSharp.WPF;
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.IO;
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Threading;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Threading;
 using static DuplicationPlugin.DuplicationTool;
-
 using MediaPlayer = LibVLCSharp.Shared.MediaPlayer;
 
 namespace MovieTexture2AssetEditorPlugin
 {
+    [RegisterDuplicationExtension]
     public class MovieTexture2DuplicationExtension : DuplicateAssetExtension
     {
         public override string AssetType => "MovieTexture2Asset";
@@ -44,6 +47,7 @@ namespace MovieTexture2AssetEditorPlugin
         }
     }
 
+    [RegisterDuplicationExtension]
     public class MovieTextureDuplicationExtension : MovieTexture2DuplicationExtension
     {
         public override string AssetType => "MovieTextureAsset";
@@ -66,8 +70,7 @@ namespace MovieTexture2AssetEditorPlugin
     }
 
     [TemplatePart(Name = "PART_VideoView", Type = typeof(VideoView))]
-    [TemplatePart(Name = "PART_PlayButton", Type = typeof(Button))]
-    [TemplatePart(Name = "PART_PauseButton", Type = typeof(Button))]
+    [TemplatePart(Name = "PART_PlaybackButton", Type = typeof(Button))]
     [TemplatePart(Name = "PART_SeekSlider", Type = typeof(Slider))]
     [TemplatePart(Name = "PART_VolumeSlider", Type = typeof(Slider))]
     [TemplatePart(Name = "PART_AssetPropertyGrid", Type = typeof(FrostyPropertyGrid))]
@@ -76,8 +79,7 @@ namespace MovieTexture2AssetEditorPlugin
         private VideoView videoView;
         private LibVLC libVLC;
         private MediaPlayer mediaPlayer;
-        private Button playButton;
-        private Button pauseButton;
+        private Button playbackButton;
         private Slider seekSlider;
         private Slider volumeSlider;
         private FrostyPropertyGrid propertyGrid;
@@ -85,6 +87,9 @@ namespace MovieTexture2AssetEditorPlugin
         private string tempFilePath;
         private bool isSeeking;
         private long lastTime = -1;
+        private bool wasPlaying;
+        private int lastVolume = MoviePluginConfig.GetConfig().DefaultVolume;
+        private bool isRestoring;
 
         static MovieTexture2Editor()
         {
@@ -100,8 +105,7 @@ namespace MovieTexture2AssetEditorPlugin
             base.OnApplyTemplate();
 
             videoView = GetTemplateChild("PART_VideoView") as VideoView;
-            playButton = GetTemplateChild("PART_PlayButton") as Button;
-            pauseButton = GetTemplateChild("PART_PauseButton") as Button;
+            playbackButton = GetTemplateChild("PART_PlaybackButton") as Button;
             seekSlider = GetTemplateChild("PART_SeekSlider") as Slider;
             volumeSlider = GetTemplateChild("PART_VolumeSlider") as Slider;
             propertyGrid = GetTemplateChild("PART_AssetPropertyGrid") as FrostyPropertyGrid;
@@ -110,8 +114,7 @@ namespace MovieTexture2AssetEditorPlugin
             EnsureVlcInitialized();
 
             // Event Listeners
-            if (playButton != null) playButton.Click += PlayButton_Click;
-            if (pauseButton != null) pauseButton.Click += PauseButton_Click;
+            if (playbackButton != null) playbackButton.Click += PlaybackButton_Click;
             
             if (seekSlider != null)
             {
@@ -141,12 +144,31 @@ namespace MovieTexture2AssetEditorPlugin
                 // Ensure Core is initialized
                 try 
                 {
+                    // Calculate path to ThirdParty\libvlc relative to FrostyEditor.exe
                     string assemblyLocation = Assembly.GetExecutingAssembly().Location;
-                    string assemblyDir = Path.GetDirectoryName(assemblyLocation);
-                    string libvlcPath = Path.Combine(assemblyDir, "libvlc", IntPtr.Size == 8 ? "win-x64" : "win-x86");
-                    Core.Initialize(libvlcPath); 
+                    string pluginsDir = Path.GetDirectoryName(assemblyLocation);
+                    string frostyDir = Path.GetDirectoryName(pluginsDir); // Move up from Plugins folder
+                    
+                    // The user specified ThirdParty\libvlc
+                    string thirdPartyDir = Path.Combine(frostyDir, "ThirdParty");
+                    string libvlcPath = Path.Combine(thirdPartyDir, "libvlc");
+                    string archPath = Path.Combine(libvlcPath, IntPtr.Size == 8 ? "win-x64" : "win-x86");
+
+                    if (!Directory.Exists(archPath))
+                    {
+                        //FrostyTaskWindow.Show("Installing LibVLC (one-time)", "Extracting...", (task) => {
+                        Directory.CreateDirectory(archPath);
+                        ExtractLibVlcResources(archPath);
+                        App.Logger.Log("Successfully installed libvlc native libraries to ThirdParty/libvlc. Movie load times will be faster in the future.");
+                        //});
+                    }
+
+                    Core.Initialize(archPath); 
                 } 
-                catch { }
+                catch (Exception ex)
+                {
+                    logger.Log($"Failed to initialize LibVLC: {ex.Message}");
+                }
 
                 libVLC = new LibVLC();
                 mediaPlayer = new MediaPlayer(libVLC);
@@ -155,9 +177,25 @@ namespace MovieTexture2AssetEditorPlugin
                 mediaPlayer.LengthChanged += MediaPlayer_LengthChanged;
                 mediaPlayer.TimeChanged += MediaPlayer_TimeChanged;
                 mediaPlayer.EndReached += MediaPlayer_EndReached;
+                mediaPlayer.Playing += MediaPlayer_Playing;
+                mediaPlayer.Paused += MediaPlayer_Paused;
+                mediaPlayer.Stopped += MediaPlayer_Stopped;
                 
                 if (videoView != null)
+                {
                     videoView.MediaPlayer = mediaPlayer;
+                    if (videoView.Parent is FrameworkElement parent)
+                    {
+                        parent.SizeChanged += (s, ev) => UpdateVideoDimensions();
+                    }
+                }
+
+                // Restore volume
+                mediaPlayer.Volume = lastVolume;
+                if (volumeSlider != null)
+                {
+                    volumeSlider.Value = lastVolume;
+                }
             }
         }
 
@@ -177,15 +215,16 @@ namespace MovieTexture2AssetEditorPlugin
             
             if (tempFilePath != null && File.Exists(tempFilePath))
             {
-                using (Media media = new Media(libVLC, tempFilePath))
+                isRestoring = true;
+                // Options: start-pause ensures it opens and primes a frame but stays paused
+                string[] options = wasPlaying ? null : new string[] { ":start-pause" };
+                using (Media media = new Media(libVLC, tempFilePath, FromType.FromPath, options))
                 {
                     mediaPlayer.Media = media;
-                }
-                
-                // Restore timestamp if we have one
-                if (lastTime > 0)
-                {
-                    mediaPlayer.Time = lastTime;
+                    mediaPlayer.Play();
+                    
+                    // Note: We don't restore Time here. 
+                    // Restoration is now handled in MediaPlayer_Playing.
                 }
             }
         }
@@ -195,6 +234,8 @@ namespace MovieTexture2AssetEditorPlugin
             if (mediaPlayer != null)
             {
                 lastTime = mediaPlayer.Time;
+                wasPlaying = mediaPlayer.IsPlaying;
+                lastVolume = mediaPlayer.Volume;
                 mediaPlayer.Stop();
                 mediaPlayer.Dispose();
                 mediaPlayer = null;
@@ -249,14 +290,16 @@ namespace MovieTexture2AssetEditorPlugin
             }
         }
 
-        private void PlayButton_Click(object sender, RoutedEventArgs e)
+        private void PlaybackButton_Click(object sender, RoutedEventArgs e)
         {
-            mediaPlayer.Play();
-        }
-
-        private void PauseButton_Click(object sender, RoutedEventArgs e)
-        {
-            mediaPlayer.Pause();
+            if (mediaPlayer.IsPlaying)
+            {
+                mediaPlayer.Pause();
+            }
+            else
+            {
+                mediaPlayer.Play();
+            }
         }
 
         private void SeekSlider_PreviewMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -307,10 +350,85 @@ namespace MovieTexture2AssetEditorPlugin
             }
         }
 
+        private void MediaPlayer_Playing(object sender, EventArgs e)
+        {
+            Dispatcher.Invoke(() => 
+            {
+                if (playbackButton != null) playbackButton.Content = "⏸"; 
+                UpdateVideoDimensions();
+            });
+
+            if (isRestoring)
+            {
+                isRestoring = false;
+                
+                long timeToRestore = lastTime;
+                lastTime = -1; // Reset to prevent double seek
+                
+                ThreadPool.QueueUserWorkItem(_ => 
+                {
+                    Thread.Sleep(100); // Small buffer for native initialization
+                    
+                    if (timeToRestore > 0)
+                    {
+                        mediaPlayer.Time = timeToRestore;
+                    }
+                    
+                    if (!wasPlaying)
+                    {
+                        mediaPlayer.Pause();
+                    }
+                });
+            }
+        }
+
+        private void MediaPlayer_Paused(object sender, EventArgs e)
+        {
+            Dispatcher.Invoke(() => { if (playbackButton != null) playbackButton.Content = "▶"; });
+        }
+
+        private void MediaPlayer_Stopped(object sender, EventArgs e)
+        {
+            Dispatcher.Invoke(() => { if (playbackButton != null) playbackButton.Content = "▶"; });
+        }
+
         private void MediaPlayer_EndReached(object sender, EventArgs e)
         {
+             // Reset restoration state
+             lastTime = 0;
+             wasPlaying = false;
+             
              // Loop? or Stop.
              ThreadPool.QueueUserWorkItem(_ => mediaPlayer?.Stop()); 
+        }
+
+        private void UpdateVideoDimensions()
+        {
+            if (mediaPlayer == null || videoView == null) return;
+
+            uint width = 0;
+            uint height = 0;
+            mediaPlayer.Size(0, ref width, ref height);
+
+            if (width > 0 && height > 0 && videoView.Parent is FrameworkElement parent)
+            {
+                double ratio = (double)width / height;
+                double parentWidth = parent.ActualWidth;
+                double parentHeight = parent.ActualHeight;
+
+                if (parentWidth <= 0 || parentHeight <= 0) return;
+
+                if (parentWidth / parentHeight > ratio)
+                {
+                    videoView.Height = parentHeight;
+                    videoView.Width = parentHeight * ratio;
+                }
+                else
+                {
+                    videoView.Width = parentWidth;
+                    videoView.Height = parentWidth / ratio;
+                }
+            }
         }
 
         public override List<ToolbarItem> RegisterToolbarItems() {
@@ -318,6 +436,7 @@ namespace MovieTexture2AssetEditorPlugin
             List<ToolbarItem> list = base.RegisterToolbarItems();
             list.Add(new ToolbarItem("Export", "Export Movie", "Images/Export.png", new RelayCommand((object state) => { ExportButton_Click(this, new RoutedEventArgs()); })));
             list.Add(new ToolbarItem("Import", "Import Movie", "Images/Import.png", new RelayCommand((object state) => { ImportButton_Click(this, new RoutedEventArgs()); })));
+            list.Add(new ToolbarItem("Revert", "Revert Chunk/Ebx", "Images/Revert.png", new RelayCommand((object state) => { RevertButton_Click(this, new RoutedEventArgs()); })));
             return list;
         }
 
@@ -406,7 +525,10 @@ namespace MovieTexture2AssetEditorPlugin
                     {
                          using (Media media = new Media(libVLC, tempFilePath))
                              mediaPlayer.Media = media;
-                         mediaPlayer.Play();
+                        if (MoviePluginConfig.GetConfig().AutoplayOnImport)
+                        {
+                            mediaPlayer.Play();
+                        }
                     }
                 }
 
@@ -417,6 +539,157 @@ namespace MovieTexture2AssetEditorPlugin
                 InvokeOnAssetModified();
 
                 logger.Log($"Succesfully imported {AssetEntry.Filename}.");
+
+                // Update the UI
+                RefreshChunkSizeInPropertyGrid(chunkSize);
+            }
+        }
+
+        private void RevertButton_Click(object sender, EventArgs e)
+        {
+            if (!(sender is MovieTexture2Editor editor))
+                return;
+
+            // Capture the AssetEntry and its Name on the UI thread
+            // This prevents threading errors when trying to access them from the background task
+            AssetEntry entry = editor.AssetEntry;
+            string assetName = entry.Name;
+
+            dynamic chunkGuid = ((dynamic)editor.Asset.RootObject).ChunkGuid;
+            if (!entry.IsAdded) { 
+                // Get unmodified data to make sure ChunkGuid is default.
+                EbxAsset unmodifiedData = App.AssetManager.GetEbx(assetName, true);
+            }
+            App.AssetManager.RevertAsset(App.AssetManager.GetChunkEntry(chunkGuid));
+
+            // FrostyTaskWindow.Show runs the action on a background thread.
+            // We MUST use the captured 'entry' variable here.
+            FrostyTaskWindow.Show("Reverting Asset", "", (task) => 
+            { 
+                App.AssetManager.RevertAsset(entry, suppressOnModify: false); 
+            });
+
+            // Find the parent tab and close it via the MainWindow
+            if (Application.Current.MainWindow is FrostyEditor.MainWindow mW)
+            {
+                // Use reflection to access the private tabControl, as it's not exposed publicly in MainWindow
+                FrostyTabControl tabControl = (FrostyTabControl)GetInstanceField(mW.GetType(), mW, "tabControl");
+                if (tabControl != null)
+                {
+                    foreach (FrostyTabItem currentTi in tabControl.Items)
+                    {
+                        if (currentTi.TabId == assetName)
+                        {
+                            mW.ShutdownEditorAndRemoveTab(editor, currentTi);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        private void RefreshChunkSizeInPropertyGrid(uint chunkSize) {
+            //propertyGrid.Items
+            ObservableCollection<FrostyPropertyGridItemData> items = (ObservableCollection<FrostyPropertyGridItemData>)GetInstanceField(propertyGrid.GetType(), propertyGrid, "items");
+            foreach (var category in items)
+            {
+                foreach (var item in category.Children)
+                {
+                    if (item.Name == "ChunkSize")
+                    {
+                        item.Value = chunkSize; break;
+                    }
+                }
+            }
+        }
+
+        // Source - https://stackoverflow.com/a/3303182
+        // Posted by dcp, modified by community. See post 'Timeline' for change history
+        // Retrieved 2026-02-16, License - CC BY-SA 2.5
+
+        /// <summary>
+        /// Uses reflection to get the field value from an object.
+        /// </summary>
+        ///
+        /// <param name="type">The instance type.</param>
+        /// <param name="instance">The instance object.</param>
+        /// <param name="fieldName">The field's name which is to be fetched.</param>
+        ///
+        /// <returns>The field value from the object.</returns>
+        internal static object GetInstanceField(Type type, object instance, string fieldName)
+        {
+            BindingFlags bindFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+                | BindingFlags.Static;
+            FieldInfo field = type.GetField(fieldName, bindFlags);
+            return field.GetValue(instance);
+        }
+
+        private void ExtractLibVlcResources(string targetPath)
+        {
+            Assembly assembly = Assembly.GetExecutingAssembly();
+            string resourcePrefix = "MovieTexture2AssetEditorPlugin.LibVlc.";
+
+            foreach (string resourceName in assembly.GetManifestResourceNames())
+            {
+                if (resourceName.StartsWith(resourcePrefix))
+                {
+                    // Relative path from the LibVlc resource root
+                    string relativePath = resourceName.Substring(resourcePrefix.Length);
+                    
+                    // Resource names replace slashes with dots. 
+                    // We need to reconstruct the file path.
+                    // LibVLC structure is:
+                    // libvlc.dll
+                    // libvlccore.dll
+                    // plugins/[category]/[plugin].dll
+                    
+                    string fileName = "";
+                    string subDir = "";
+
+                    if (relativePath.StartsWith("plugins."))
+                    {
+                        // e.g., plugins.access.libaccess_plugin.dll
+                        // We expect: plugins\access\libaccess_plugin.dll
+                        string[] parts = relativePath.Split('.');
+                        // last 2 parts are [filename] and [dll]
+                        if (parts.Length >= 4)
+                        {
+                            fileName = parts[parts.Length - 2] + "." + parts[parts.Length - 1];
+                            // Everything between "plugins" and the filename
+                            List<string> dirParts = new List<string>();
+                            for (int i = 0; i < parts.Length - 2; i++)
+                            {
+                                dirParts.Add(parts[i]);
+                            }
+                            subDir = Path.Combine(dirParts.ToArray());
+                        }
+                    }
+                    else
+                    {
+                        // root files like libvlc.dll
+                        fileName = relativePath;
+                    }
+
+                    if (!string.IsNullOrEmpty(fileName))
+                    {
+                        string fullDir = Path.Combine(targetPath, subDir);
+                        if (!Directory.Exists(fullDir)) Directory.CreateDirectory(fullDir);
+                        
+                        WriteResourceToFile(assembly, resourceName, Path.Combine(fullDir, fileName));
+                    }
+                }
+            }
+        }
+
+        private void WriteResourceToFile(Assembly assembly, string resourceName, string fileName)
+        {
+            using (Stream stream = assembly.GetManifestResourceStream(resourceName))
+            {
+                if (stream == null) return;
+                using (FileStream fileStream = new FileStream(fileName, FileMode.Create))
+                {
+                    stream.CopyTo(fileStream);
+                }
             }
         }
     }
